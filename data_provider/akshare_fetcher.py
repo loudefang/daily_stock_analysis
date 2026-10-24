@@ -1095,7 +1095,8 @@ class AkshareFetcher(BaseFetcher):
             return None
         elif _is_hk_code(stock_code):
             return self._get_hk_realtime_quote(stock_code)
-        elif _is_etf_code(stock_code):
+        elif _is_etf_code(stock_code) and source not in ("sina", "tencent"):
+            # 东财 ETF 全量接口；新浪/腾讯单股接口同样支持 ETF，走下方分支作为后备
             source_key = "akshare_etf"
             if not circuit_breaker.is_available(source_key):
                 logger.info(f"[熔断] 数据源 {source_key} 处于熔断状态，跳过")
@@ -1106,7 +1107,7 @@ class AkshareFetcher(BaseFetcher):
             if not circuit_breaker.is_available(source_key):
                 logger.info(f"[熔断] 数据源 {source_key} 处于熔断状态，跳过")
                 return None
-            # 普通 A 股：根据 source 选择数据源
+            # 普通 A 股 / ETF（仅新浪、腾讯）：根据 source 选择数据源
             if source == "sina":
                 return self._get_stock_realtime_quote_sina(stock_code)
             elif source == "tencent":
@@ -1217,7 +1218,7 @@ class AkshareFetcher(BaseFetcher):
     
     def _get_stock_realtime_quote_sina(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
-        获取普通 A 股实时行情数据（新浪财经数据源）
+        获取 A 股 / ETF 实时行情数据（新浪财经数据源）
         
         数据来源：新浪财经接口（直连，单股票查询）
         优点：单股票查询，负载小，速度快
@@ -1368,7 +1369,7 @@ class AkshareFetcher(BaseFetcher):
     
     def _get_stock_realtime_quote_tencent(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
-        获取普通 A 股实时行情数据（腾讯财经数据源）
+        获取 A 股 / ETF 实时行情数据（腾讯财经数据源）
         
         数据来源：腾讯财经接口（直连，单股票查询）
         优点：单股票查询，负载小，包含换手率

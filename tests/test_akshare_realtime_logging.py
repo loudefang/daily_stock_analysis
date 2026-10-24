@@ -341,3 +341,47 @@ def test_limit_up_pool_zero_pads_first_seal_times_before_sorting(monkeypatch, ak
     assert [row["code"] for row in result] == ["000001", "000003", "000002"]
     assert result[0]["first_limit_time"] == "092500"
     assert result[0]["last_limit_time"] == "093000"
+
+
+@pytest.mark.parametrize(
+    ("source", "stock_code", "expected_url", "payload"),
+    (
+        ("sina", "518880", f"http://{SINA_REALTIME_ENDPOINT}=sh518880", _make_sina_payload()),
+        ("tencent", "159934", f"http://{TENCENT_REALTIME_ENDPOINT}=sz159934", _make_tencent_payload()),
+    ),
+)
+def test_etf_realtime_sina_tencent_use_direct_quote_endpoints(
+    monkeypatch, akshare_fetcher, source, stock_code, expected_url, payload
+):
+    breaker = _DummyCircuitBreaker()
+    monkeypatch.setattr("data_provider.akshare_fetcher.get_realtime_circuit_breaker", lambda: breaker)
+    requested_urls = []
+
+    def _fake_get(url, *args, **kwargs):
+        requested_urls.append(url)
+        return _DummyResponse(200, payload)
+
+    monkeypatch.setattr("data_provider.akshare_fetcher.requests.get", _fake_get)
+    monkeypatch.setattr(
+        akshare_fetcher,
+        "_get_etf_realtime_quote",
+        lambda code: pytest.fail("ETF sina/tencent quote must not use the Eastmoney ETF spot list"),
+    )
+
+    quote = akshare_fetcher.get_realtime_quote(stock_code, source=source)
+
+    assert quote is not None
+    assert quote.code == stock_code
+    assert quote.price == 5.19
+    assert requested_urls == [expected_url]
+    assert breaker.successes == [f"akshare_{source}"]
+
+
+def test_etf_realtime_em_keeps_eastmoney_etf_spot_route(monkeypatch, akshare_fetcher):
+    monkeypatch.setattr(
+        "data_provider.akshare_fetcher.get_realtime_circuit_breaker", lambda: _DummyCircuitBreaker()
+    )
+    sentinel = object()
+    monkeypatch.setattr(akshare_fetcher, "_get_etf_realtime_quote", lambda code: sentinel)
+
+    assert akshare_fetcher.get_realtime_quote("518880", source="em") is sentinel
